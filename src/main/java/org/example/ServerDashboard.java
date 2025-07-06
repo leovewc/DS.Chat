@@ -93,6 +93,19 @@ public class ServerDashboard extends Application {
     }
 
     public static void main(String[] args) {
+        // —— 1. 在同一 JVM 中启动聊天服务器 ——
+        Thread serverThread = new Thread(() -> {
+            try {
+                // 调用你的 Server.main 来开启 accept 循环、调度等逻辑
+                Server.main(new String[0]);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+        serverThread.setDaemon(true);  // 服务器线程随 Dashboard 退出而退出
+        serverThread.start();
+
+        // —— 2. 启动 JavaFX UI ——
         launch(args);
     }
 }
