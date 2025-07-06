@@ -78,13 +78,13 @@ public class ClientGUI extends Application {
     }
 
     private void connectToServer() {
-        new Thread(() -> {
+     new Thread(() -> {
             try {
                 socket = new Socket("localhost", 9999);
                 out    = new PrintWriter(socket.getOutputStream(), true);
                 in     = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
-                // 1) Read welcome lines
+                // 1) 读欢迎消息，直到 Welcome! 然后跳出
                 String line;
                 while ((line = in.readLine()) != null) {
                     final String msg = line;
@@ -92,7 +92,7 @@ public class ClientGUI extends Application {
                     if (msg.startsWith("Welcome!")) break;
                 }
 
-                // 2) Start listener for all future messages
+                // 2) 启动专门的监听线程，不断读服务器发来的所有消息
                 new Thread(() -> {
                     try {
                         String incoming;
@@ -101,13 +101,13 @@ public class ClientGUI extends Application {
                             Platform.runLater(() -> addMessage(msg, false));
                         }
                     } catch (Exception e) {
-                        Platform.runLater(() -> showAlert("Disconnected", "Lost connection to server."));
+                        Platform.runLater(() -> addMessage("[System] 与服务器断开连接", false));
                     }
                 }, "ServerListener").start();
 
             } catch (Exception e) {
                 Platform.runLater(() ->
-                    showAlert("Connection Error", "Cannot connect to server:\n" + e.getMessage())
+                    showAlert("Connection Error", "无法连接到服务器: " + e.getMessage())
                 );
             }
         }, "Connector").start();
