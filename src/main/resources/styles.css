@@ -1,0 +1,21 @@
+.root {
+    -fx-background-color: #f0f0f0;
+}
+.list-view {
+    -fx-background-color: transparent;
+    -fx-control-inner-background: transparent;
+}
+.my-bubble {
+    -fx-background-color: #9fe6a0;
+    -fx-background-radius: 12 12 0 12;
+    -fx-padding: 6 10;
+}
+.other-bubble {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 12 12 12 0;
+    -fx-padding: 6 10;
+}
+.chat-bubble-text {
+    -fx-font-size: 14px;
+    -fx-wrap-text: true;
+}
