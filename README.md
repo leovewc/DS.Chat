@@ -17,3 +17,10 @@ mvn clean compile javafx:run@dashboard
 mvn clean compile javafx:run@client
 
 ```
+
+## 查看端口占用
+
+```cmd
+tasklist | findstr 9999
+
+```

@@ -22,9 +22,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Chat 客户端：通过服务端分配的 USERJOIN 消息确定头像编号，保证一致性。
- */
 public class ClientGUI extends Application {
     public static class ChatMessage {
         public final String sender, content;

@@ -10,10 +10,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * ClientHandler processes commands from a connected chat client.
- * 现在支持 JOIN <room> <username> 并在广播时附带用户名，实现群聊消息气泡功能。
- */
+
 public class ClientHandler implements Runnable {
     private final Socket socket;
     private final DataStore store;
@@ -53,6 +50,18 @@ public class ClientHandler implements Runnable {
                         CopyOnWriteArrayList<String> list = Server.usersInRoom.get(room);
                         if (!list.contains(user)) list.add(user);
                         int avatarId = list.indexOf(user);
+
+                        // —— 新增：先把已有用户的映射全发给新客户端 ——
+                        for (String existing : list) {
+                            int id = list.indexOf(existing);
+                            // 只发给新客户端，所以用 out.println
+                            out.println("USERJOIN|" + existing + "|" + id);
+                        }        // —— 新增：先把已有用户的映射全发给新客户端 ——
+                        for (String existing : list) {
+                            int id = list.indexOf(existing);
+                            // 只发给新客户端，所以用 out.println
+                            out.println("USERJOIN|" + existing + "|" + id);
+                        }
 
                         // —— ② 创建房间、注册客户端 ——
                         currentRoom = room;
