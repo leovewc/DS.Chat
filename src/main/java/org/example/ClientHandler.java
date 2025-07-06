@@ -9,13 +9,16 @@ import java.util.List;
 
 /**
  * ClientHandler processes commands from a connected chat client.
+ * 现在支持 JOIN <room> <username> 并在广播时附带用户名，实现群聊消息气泡功能。
  */
 public class ClientHandler implements Runnable {
     private final Socket socket;
     private final DataStore store;
     private String currentRoom;
+    private String username;
     private PrintWriter out;
     private BufferedReader in;
+
     public String getCurrentRoom() { return currentRoom; }
     public PrintWriter getWriter()      { return out;         }
 
@@ -29,7 +32,7 @@ public class ClientHandler implements Runnable {
         try {
             out = new PrintWriter(socket.getOutputStream(), true);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            out.println("Welcome! Commands: JOIN <room>, SEND <room> <message>, LIST, HISTORY <room> <count>, QUIT");
+            out.println("Welcome! Commands: JOIN <room> <username>, SEND <room> <message>, LIST, HISTORY <room> <count>, QUIT");
 
             String line;
             while ((line = in.readLine()) != null) {
@@ -37,16 +40,20 @@ public class ClientHandler implements Runnable {
                 String cmd = parts[0].toUpperCase();
                 switch (cmd) {
                     case "JOIN":
-                        if (parts.length >= 2) {
+                        if (parts.length >= 3) {
                             String room = parts[1];
-                            store.createRoom(room);
+                            String user = parts[2];
+                            // 更新当前房间和用户名
                             currentRoom = room;
-                            out.println("Joined room: " + room);
-                            ServerStats.addLog("Client joined room: " + room);
+                            username = user;
+
+                            store.createRoom(room);
+                            out.println("Joined room: " + room + " as " + username);
+                            ServerStats.addLog("Client " + username + " joined room: " + room);
                             Server.registerClient(room, out);
 
-                            // —— 在这里添加：自动拉取 N 条最近消息 ——
-                            final int N = 10;  // 你想要的历史条数，改成自己需要的值
+                            // 拉取最近 N 条历史消息并发送给新加入用户
+                            final int N = 10;
                             List<String> recent = store.getRecentMessages(room, N);
                             if (!recent.isEmpty()) {
                                 out.println("Last " + N + " messages in " + room + ":");
@@ -55,31 +62,36 @@ public class ClientHandler implements Runnable {
                                 }
                             }
                         } else {
-                            out.println("Usage: JOIN <room>");
+                            out.println("Usage: JOIN <room> <username>");
                         }
-
                         break;
+
                     case "SEND":
-                        if (parts.length >= 3) {
+                        if (parts.length >= 3 && currentRoom != null && username != null) {
                             String room = parts[1];
                             String msg = parts[2];
-                            store.addMessage(room, msg);
+
+                            // 持久化到 DataStore 和备份
+                            store.addMessage(room, username + ": " + msg);
                             try {
-                                MessageHelper.appendMessage(room, msg);
+                                MessageHelper.appendMessage(room, username + ": " + msg);
                             } catch (IOException e) {
                                 out.println("Error persisting message: " + e.getMessage());
                             }
-                            String fullMsg = "[" + room + "] " + msg;
+
+                            // 广播给房间内其他客户端，并包含用户名
+                            String fullMsg = username + "|" + msg;
                             Server.broadcast(room, fullMsg, out);
-                            out.println("Message sent to " + room);
-                            ServerStats.addLog("Message sent to " + room + ": " + msg);
+                            ServerStats.addLog("Message from " + username + " to " + room + ": " + msg);
                         } else {
-                            out.println("Usage: SEND <room> <message>");
+                            out.println("Usage: SEND <room> <message> (after JOINing)");
                         }
                         break;
+
                     case "LIST":
                         out.println("Rooms: " + store.listRooms());
                         break;
+
                     case "HISTORY":
                         if (parts.length >= 3) {
                             String room = parts[1];
@@ -90,25 +102,29 @@ public class ClientHandler implements Runnable {
                                 out.println("Count must be a number");
                                 break;
                             }
-                            out.println("Last " + count + " messages in " + room + ": " + store.getRecentMessages(room, count));
+                            List<String> history = store.getRecentMessages(room, count);
+                            out.println("Last " + count + " messages in " + room + ":");
+                            for (String m : history) {
+                                out.println(m);
+                            }
                         } else {
                             out.println("Usage: HISTORY <room> <count>");
                         }
                         break;
+
                     case "QUIT":
                         out.println("Goodbye!");
-                        ServerStats.addLog("Client quit" + (currentRoom != null ? " from room: " + currentRoom : ""));
-                        // Clean up room when client leaves
-
-                    if (currentRoom != null) {
-                        Server.unregisterClient(currentRoom, out);
-
-                        if (!Server.hasRoom(currentRoom)) {
-                            store.removeRoom(currentRoom);
+                        ServerStats.addLog("Client " + (username != null ? username : "") + " quit");
+                        // 清理客户端注册信息
+                        if (currentRoom != null) {
+                            Server.unregisterClient(currentRoom, out);
+                            if (!Server.hasRoom(currentRoom)) {
+                                store.removeRoom(currentRoom);
+                            }
                         }
-                    }
                         socket.close();
                         return;
+
                     default:
                         out.println("Unknown command.");
                 }
