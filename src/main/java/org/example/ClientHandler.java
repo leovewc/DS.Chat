@@ -5,6 +5,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.io.IOException;
+import java.util.List;
 
 /**
  * ClientHandler processes commands from a connected chat client.
@@ -43,9 +44,20 @@ public class ClientHandler implements Runnable {
                             out.println("Joined room: " + room);
                             ServerStats.addLog("Client joined room: " + room);
                             Server.registerClient(room, out);
+
+                            // —— 在这里添加：自动拉取 N 条最近消息 ——
+                            final int N = 10;  // 你想要的历史条数，改成自己需要的值
+                            List<String> recent = store.getRecentMessages(room, N);
+                            if (!recent.isEmpty()) {
+                                out.println("Last " + N + " messages in " + room + ":");
+                                for (String m : recent) {
+                                    out.println(m);
+                                }
+                            }
                         } else {
                             out.println("Usage: JOIN <room>");
                         }
+
                         break;
                     case "SEND":
                         if (parts.length >= 3) {

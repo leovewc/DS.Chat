@@ -12,12 +12,21 @@ import java.io.PrintWriter;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.ArrayList;
-import java.util.List;
+import java.io.IOException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.net.ServerSocket;
+import java.util.concurrent.ExecutorService;
+
 /**
  * ChatServer listens for client connections and schedules backups + graceful shutdown.
  */
 public class Server {
     private static final int PORT = 9999;
+
+    private static ServerSocket serverSocket;
+    private static ExecutorService executor;
+    private static ScheduledExecutorService scheduler;
+
     private static final ConcurrentHashMap<String, CopyOnWriteArrayList<PrintWriter>> roomClients
         = new ConcurrentHashMap<>();
 
@@ -54,6 +63,26 @@ public class Server {
         return roomClients.containsKey(room);
     }
 
+    public static void shutdownServer() {
+        System.out.println("[Server] shutdownServer() called");
+        try {
+            if (scheduler != null) {
+                scheduler.shutdownNow();
+                System.out.println("[Server] scheduler shut down");
+            }
+            if (executor != null) {
+                executor.shutdownNow();
+                System.out.println("[Server] executor shut down");
+            }
+            if (serverSocket != null && !serverSocket.isClosed()) {
+                serverSocket.close();
+                System.out.println("[Server] serverSocket closed");
+            }
+        } catch (IOException e) {
+            System.err.println("[Server] Error during shutdown: " + e.getMessage());
+        }
+    }
+
     public static void main(String[] args) {
 
 
@@ -68,8 +97,8 @@ public class Server {
             System.err.println("[Server] History load error: " + e.getMessage());
         }
 
-        ExecutorService pool = Executors.newCachedThreadPool();
-        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        executor  = Executors.newCachedThreadPool();
+        scheduler = Executors.newScheduledThreadPool(1);
 
         // Periodic backup
         scheduler.scheduleAtFixedRate(() -> {
@@ -93,25 +122,22 @@ public class Server {
 
         // Graceful shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("[Server] Shutdown hook triggered: terminating services...");
-            pool.shutdown();
-            scheduler.shutdown();
+            System.out.println("[Server] Shutdown hook triggered.");
+            shutdownServer();
         }));
 
         // Accept loop
-        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+    try {
+            serverSocket = new ServerSocket(PORT);
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-
                 System.out.println("New client connected: " + clientSocket.getRemoteSocketAddress());
                 ServerStats.clientConnected();
-                pool.execute(() -> {
+                executor.execute(() -> {
                     ClientHandler handler = new ClientHandler(clientSocket, store);
-
                     try {
                         handler.run();
                     } finally {
-
                         ServerStats.clientDisconnected();
                         String room = handler.getCurrentRoom();
                         PrintWriter out = handler.getWriter();
@@ -122,12 +148,13 @@ public class Server {
                                 if (list.isEmpty()) {
                                     roomClients.remove(room);
                                 }
+                                ServerStats.setActiveRooms(new ArrayList<>(roomClients.keySet()));
                             }
                         }
                     }
                 });
             }
-        } catch (Exception e) {
+        }catch (Exception e) {
             System.err.println("Server error: " + e.getMessage());
         }
     }

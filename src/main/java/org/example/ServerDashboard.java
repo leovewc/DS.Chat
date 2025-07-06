@@ -48,6 +48,22 @@ public class ServerDashboard extends Application {
 
         primaryStage.setTitle("Server Dashboard");
         primaryStage.setScene(new Scene(root, 800, 600));
+
+        // 在 show() 之前，注册关闭钩子
+        primaryStage.setOnCloseRequest(event -> {
+            // 停掉刷新线程
+            if (refresher != null && !refresher.isShutdown()) {
+                refresher.shutdownNow();
+            }
+            // 关闭服务器
+            Server.shutdownServer();
+
+            // 退出 JavaFX 平台
+            Platform.exit();
+            // 强制结束 JVM，避免有非 daemon 线程仍然阻塞
+            System.exit(0);
+        });
+
         primaryStage.show();
 
         startRefresher();
@@ -59,17 +75,17 @@ public class ServerDashboard extends Application {
     private void startRefresher() {
         refresher = Executors.newSingleThreadScheduledExecutor();
         refresher.scheduleAtFixedRate(() -> {
-    int clientCount = ServerStats.getActiveClientCount();
-    List<String> rooms = ServerStats.getActiveRooms();
-    List<String> logs = ServerStats.getRecentLogs();
+            int clientCount = ServerStats.getActiveClientCount();
+            List<String> rooms = ServerStats.getActiveRooms();
+            List<String> logs = ServerStats.getRecentLogs();
 
-    Platform.runLater(() -> {
-        clientCountLabel.setText("Clients: " + clientCount);
-        roomsList.getItems().setAll(rooms);
-        logArea.clear();
-        logs.forEach(line -> logArea.appendText(line + "\n"));
-    });
-}, 0, 1, TimeUnit.SECONDS);
+            Platform.runLater(() -> {
+                clientCountLabel.setText("Clients: " + clientCount);
+                roomsList.getItems().setAll(rooms);
+                logArea.clear();
+                logs.forEach(line -> logArea.appendText(line + "\n"));
+            });
+        }, 0, 1, TimeUnit.SECONDS);
     }
 
     /**
@@ -80,7 +96,7 @@ public class ServerDashboard extends Application {
             try {
                 MessageHelper.backupHistory();
                 Platform.runLater(() -> logArea.appendText("[Dashboard] Manual backup triggered.\n"));
-            } catch (IOException e) {
+            } catch (Exception e) {
                 Platform.runLater(() -> logArea.appendText("[Dashboard] Backup failed: " + e.getMessage() + "\n"));
             }
         }).start();
@@ -89,7 +105,12 @@ public class ServerDashboard extends Application {
     @Override
     public void stop() throws Exception {
         super.stop();
-        refresher.shutdown();
+        // 停掉刷新任务
+        if (refresher != null && !refresher.isShutdown()) {
+            refresher.shutdownNow();
+        }
+        // 再次确保 JVM 退出
+        System.exit(0);
     }
 
     public static void main(String[] args) {
@@ -109,4 +130,3 @@ public class ServerDashboard extends Application {
         launch(args);
     }
 }
-
