@@ -21,10 +21,7 @@ import java.util.concurrent.TimeUnit;
  * - Allows manual backup trigger
  */
 public class ServerDashboard extends Application {
-    // 在同一进程启动服务器，以确保 MessageHelper.store 已初始化
-    static {
-        new Thread(() -> Server.main(new String[0])).start();
-    }
+
     private ListView<String> roomsList;
     private Label clientCountLabel;
     private TextArea logArea;
