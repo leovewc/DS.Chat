@@ -1,5 +1,4 @@
 package org.example;
-
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -22,6 +21,10 @@ import java.util.concurrent.TimeUnit;
  * - Allows manual backup trigger
  */
 public class ServerDashboard extends Application {
+    // 在同一进程启动服务器，以确保 MessageHelper.store 已初始化
+    static {
+        new Thread(() -> Server.main(new String[0])).start();
+    }
     private ListView<String> roomsList;
     private Label clientCountLabel;
     private TextArea logArea;
@@ -59,17 +62,17 @@ public class ServerDashboard extends Application {
     private void startRefresher() {
         refresher = Executors.newSingleThreadScheduledExecutor();
         refresher.scheduleAtFixedRate(() -> {
-            int clientCount = ServerStats.getActiveClientCount();
-            List<String> rooms = ServerStats.getActiveRooms();
-            List<String> logs = ServerStats.getRecentLogs();
+    int clientCount = ServerStats.getActiveClientCount();
+    List<String> rooms = ServerStats.getActiveRooms();
+    List<String> logs = ServerStats.getRecentLogs();
 
-            Platform.runLater(() -> {
-                clientCountLabel.setText("Clients: " + clientCount);
-                roomsList.getItems().setAll(rooms);
-                logArea.clear();
-                logs.forEach(line -> logArea.appendText(line + "\n"));
-            });
-        }, 0, 2, TimeUnit.SECONDS);
+    Platform.runLater(() -> {
+        clientCountLabel.setText("Clients: " + clientCount);
+        roomsList.getItems().setAll(rooms);
+        logArea.clear();
+        logs.forEach(line -> logArea.appendText(line + "\n"));
+    });
+}, 0, 1, TimeUnit.SECONDS);
     }
 
     /**
@@ -96,3 +99,4 @@ public class ServerDashboard extends Application {
         launch(args);
     }
 }
+

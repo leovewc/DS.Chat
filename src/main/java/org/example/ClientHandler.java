@@ -15,6 +15,8 @@ public class ClientHandler implements Runnable {
     private String currentRoom;
     private PrintWriter out;
     private BufferedReader in;
+    public String getCurrentRoom() { return currentRoom; }
+    public PrintWriter getWriter()      { return out;         }
 
     public ClientHandler(Socket socket, DataStore store) {
         this.socket = socket;
@@ -40,6 +42,7 @@ public class ClientHandler implements Runnable {
                             currentRoom = room;
                             out.println("Joined room: " + room);
                             ServerStats.addLog("Client joined room: " + room);
+                            Server.registerClient(room, out);
                         } else {
                             out.println("Usage: JOIN <room>");
                         }
@@ -54,6 +57,8 @@ public class ClientHandler implements Runnable {
                             } catch (IOException e) {
                                 out.println("Error persisting message: " + e.getMessage());
                             }
+                            String fullMsg = "[" + room + "] " + msg;
+                            Server.broadcast(room, fullMsg, out);
                             out.println("Message sent to " + room);
                             ServerStats.addLog("Message sent to " + room + ": " + msg);
                         } else {
@@ -82,9 +87,14 @@ public class ClientHandler implements Runnable {
                         out.println("Goodbye!");
                         ServerStats.addLog("Client quit" + (currentRoom != null ? " from room: " + currentRoom : ""));
                         // Clean up room when client leaves
-                        if (currentRoom != null) {
+
+                    if (currentRoom != null) {
+                        Server.unregisterClient(currentRoom, out);
+
+                        if (!Server.hasRoom(currentRoom)) {
                             store.removeRoom(currentRoom);
                         }
+                    }
                         socket.close();
                         return;
                     default:
