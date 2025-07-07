@@ -6,6 +6,9 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * ClientHandler processes commands from a connected chat client.
@@ -40,31 +43,43 @@ public class ClientHandler implements Runnable {
                 String cmd = parts[0].toUpperCase();
                 switch (cmd) {
                     case "JOIN":
-                        if (parts.length >= 3) {
-                            String room = parts[1];
-                            String user = parts[2];
-                            // 更新当前房间和用户名
-                            currentRoom = room;
-                            username = user;
+                    if (parts.length >= 3) {
+                        String room = parts[1];
+                        String user = parts[2];
 
-                            store.createRoom(room);
-                            out.println("Joined room: " + room + " as " + username);
-                            ServerStats.addLog("Client " + username + " joined room: " + room);
-                            Server.registerClient(room, out);
+                        // —— ① 服务端维护房间用户顺序并分配 avatarId ——
+                        Server.usersInRoom
+                            .computeIfAbsent(room, r -> new CopyOnWriteArrayList<>());
+                        CopyOnWriteArrayList<String> list = Server.usersInRoom.get(room);
+                        if (!list.contains(user)) list.add(user);
+                        int avatarId = list.indexOf(user);
 
-                            // 拉取最近 N 条历史消息并发送给新加入用户
-                            final int N = 10;
-                            List<String> recent = store.getRecentMessages(room, N);
-                            if (!recent.isEmpty()) {
-                                out.println("Last " + N + " messages in " + room + ":");
-                                for (String m : recent) {
-                                    out.println(m);
-                                }
+                        // —— ② 创建房间、注册客户端 ——
+                        currentRoom = room;
+                        username = user;
+                        store.createRoom(room);
+                        out.println("Joined room: " + room + " as " + username);
+                        ServerStats.addLog("Client " + username + " joined room: " + room);
+                        Server.registerClient(room, out);
+
+                        // —— ③ 广播 USERJOIN 通知，包含 avatarId ——
+                        String joinMsg = "USERJOIN|" + username + "|" + avatarId;
+                        Server.broadcast(room, joinMsg, null);
+
+                        // —— ④ 发送最近 N 条历史消息 ——
+                        final int N = 10;
+                        List<String> recent = store.getRecentMessages(room, N);
+                        if (!recent.isEmpty()) {
+                            out.println("Last " + N + " messages in " + room + ":");
+                            for (String m : recent) {
+                                out.println(m);
                             }
-                        } else {
-                            out.println("Usage: JOIN <room> <username>");
                         }
-                        break;
+                    } else {
+                        out.println("Usage: JOIN <room> <username>");
+                    }
+                    break;
+
 
                     case "SEND":
                         if (parts.length >= 3 && currentRoom != null && username != null) {

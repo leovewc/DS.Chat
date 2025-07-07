@@ -17,50 +17,58 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.net.URL;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
- * 完整的 QQ-风格群聊客户端 UI，实现左右消息气泡＋头像＋用户名显示。
+ * Chat 客户端：通过服务端分配的 USERJOIN 消息确定头像编号，保证一致性。
  */
 public class ClientGUI extends Application {
-    // 用于在 ListView 中展示的消息模型
     public static class ChatMessage {
         public final String sender, content;
-        public ChatMessage(String sender, String content) {
-            this.sender = sender;
-            this.content = content;
-        }
+        public ChatMessage(String s, String c) { sender = s; content = c; }
     }
 
     private ListView<ChatMessage> messageList;
     private TextField inputField;
     private Button sendButton;
 
-    private String myUsername;
-    private String room;
-
+    private String myUsername, room;
     private PrintWriter out;
     private BufferedReader in;
     private Socket socket;
 
+    // >>>> 头像资源列表 & 映射表
+    private final List<String> avatarPaths = List.of(
+        "/avatars/avatar1.png",
+        "/avatars/avatar2.png",
+        "/avatars/avatar3.png",
+        "/avatars/avatar4.png"
+    );
+    private final String defaultAvatar = "/avatars/default.png";
+    private final Map<String,String> avatarMap = new LinkedHashMap<>();
+
     @Override
     public void start(Stage stage) {
-        // —— 1. 弹窗输入房间与用户名 ——
+        // 1. 输入房间 & 用户名
         TextInputDialog rd = new TextInputDialog("general");
-        rd.setHeaderText("输入房间名：");
+        rd.setHeaderText("Enter room name:");
         room = rd.showAndWait().orElse("general");
 
         TextInputDialog ud = new TextInputDialog("User");
-        ud.setHeaderText("输入用户名：");
+        ud.setHeaderText("Enter your username:");
         myUsername = ud.showAndWait().orElse("User");
 
-        // —— 2. 构建 UI ——
+        // 2. 构建 UI
         messageList = new ListView<>();
         messageList.setSelectionModel(new NoSelectionModel<>());
-        messageList.setCellFactory(lv -> new ChatCell(myUsername));
+        messageList.setCellFactory(lv -> new ChatCell());
         BorderPane.setMargin(messageList, new Insets(10));
 
         inputField = new TextField();
-        inputField.setPromptText("请输入消息…");
+        inputField.setPromptText("Enter message…");
         inputField.setOnAction(e -> send());
 
         sendButton = new Button("Send");
@@ -72,14 +80,13 @@ public class ClientGUI extends Application {
 
         BorderPane root = new BorderPane(messageList, null, null, bottom, null);
         Scene scene = new Scene(root, 600, 400);
-        // 请确保 styles.css 在 resources 目录下
         scene.getStylesheets().add(getClass().getResource("/styles.css").toExternalForm());
 
-        stage.setTitle("Chat Room: " + room + " — " + myUsername);
+        stage.setTitle("Room: " + room + " — " + myUsername);
         stage.setScene(scene);
         stage.show();
 
-        // —— 3. 建立连接并 JOIN ——
+        // 3. 连接 & JOIN
         connectAndJoin();
     }
 
@@ -87,38 +94,61 @@ public class ClientGUI extends Application {
         new Thread(() -> {
             try {
                 socket = new Socket("localhost", 9999);
-                out = new PrintWriter(socket.getOutputStream(), true);
-                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                out    = new PrintWriter(socket.getOutputStream(), true);
+                in     = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
-                // 发送 JOIN 命令
+                // 发送 JOIN
                 out.println("JOIN " + room + " " + myUsername);
 
-                // 启动消息监听线程
+                // 统一 Reader 线程
                 Thread reader = new Thread(() -> {
                     try {
                         String line;
                         while ((line = in.readLine()) != null) {
-                            // 只处理“username|message”格式
-                            if (line.contains("|")) {
-                                String[] p = line.split("\\|", 2);
-                                String sender = p[0], content = p[1];
+                            final String msg = line;
+                            System.out.println("<< " + msg);
+
+                            // >>>> 处理服务端分配的 avatarId
+                            if (msg.startsWith("USERJOIN|")) {
+                                String[] p = msg.split("\\|", 3);
+                                String user = p[1];
+                                int avatarId = Integer.parseInt(p[2]);
+                                String path = avatarId < avatarPaths.size()
+                                    ? avatarPaths.get(avatarId)
+                                    : defaultAvatar;
+                                avatarMap.put(user, path);
+
                                 Platform.runLater(() ->
-                                    messageList.getItems().add(new ChatMessage(sender, content))
+                                    messageList.getItems().add(new ChatMessage("System", user + " joined"))
+                                );
+                            }
+                            // 普通聊天 username|content
+                            else if (msg.contains("|")) {
+                                String[] p2 = msg.split("\\|", 2);
+                                Platform.runLater(() ->
+                                    messageList.getItems().add(new ChatMessage(p2[0], p2[1]))
+                                );
+                            }
+                            // 其他系统消息
+                            else {
+                                Platform.runLater(() ->
+                                    messageList.getItems().add(new ChatMessage("System", msg))
                                 );
                             }
                         }
-                    } catch (Exception e) {
+                    } catch (Exception ex) {
                         Platform.runLater(() ->
-                            messageList.getItems().add(new ChatMessage("System", "已断开与服务器连接"))
+                            messageList.getItems().add(new ChatMessage("System", "Disconnected"))
                         );
                     }
                 }, "ServerReader");
                 reader.setDaemon(true);
                 reader.start();
 
-            } catch (Exception ex) {
+            } catch (Exception e) {
                 Platform.runLater(() ->
-                    new Alert(Alert.AlertType.ERROR, "连接失败: " + ex.getMessage()).showAndWait()
+                    new Alert(Alert.AlertType.ERROR, "Connection error: " + e.getMessage())
+                        .showAndWait()
                 );
             }
         }, "Connector").start();
@@ -127,10 +157,8 @@ public class ClientGUI extends Application {
     private void send() {
         String txt = inputField.getText().trim();
         if (txt.isEmpty() || out == null) return;
-        // 本地先显示一条
         messageList.getItems().add(new ChatMessage(myUsername, txt));
         inputField.clear();
-        // 再发给服务器
         out.println("SEND " + room + " " + txt);
     }
 
@@ -143,10 +171,10 @@ public class ClientGUI extends Application {
         super.stop();
     }
 
-    /** 禁用 ListView 的选中 */
+    /** 禁用 ListView 选中 */
     private static class NoSelectionModel<T> extends MultipleSelectionModel<T> {
         @Override public ObservableList<Integer> getSelectedIndices() { return FXCollections.emptyObservableList(); }
-        @Override public ObservableList<T> getSelectedItems() { return FXCollections.emptyObservableList(); }
+        @Override public ObservableList<T> getSelectedItems()   { return FXCollections.emptyObservableList(); }
         @Override public void select(int i) {}
         @Override public void select(T obj) {}
         @Override public void clearAndSelect(int i) {}
@@ -157,34 +185,43 @@ public class ClientGUI extends Application {
         @Override public void clearSelection(int i) {}
         @Override public void clearSelection() {}
         @Override public boolean isSelected(int i) { return false; }
-        @Override public boolean isEmpty() { return true; }
+        @Override public boolean isEmpty()         { return true; }
         @Override public void selectIndices(int index, int... indices) {}
         @Override public void selectAll() {}
         public void deselect(int index) {}
     }
 
-    /** 自定义 Cell，根据 sender 决定左右和样式 */
-    private static class ChatCell extends ListCell<ChatMessage> {
-        private final String me;
-        public ChatCell(String me) { this.me = me; }
-
+    /** 渲染 ChatMessage 的单元格 */
+    private class ChatCell extends ListCell<ChatMessage> {
         @Override
         protected void updateItem(ChatMessage msg, boolean empty) {
             super.updateItem(msg, empty);
-            if (empty || msg == null) { setGraphic(null); return; }
+            if (empty || msg == null) {
+                setGraphic(null);
+                return;
+            }
 
             Label lbl = new Label(msg.content);
             lbl.setWrapText(true);
             lbl.setMaxWidth(300);
-            lbl.getStyleClass().add(msg.sender.equals(me) ? "my-bubble" : "other-bubble");
+            lbl.getStyleClass().add(
+                msg.sender.equals(myUsername) ? "my-bubble" : "other-bubble"
+            );
 
-            ImageView avatar = new ImageView(new Image(
-                msg.sender.equals(me) ? "/avatars/me.png" : "/avatars/other.png",
-                32, 32, true, true
-            ));
+            // >>>> 安全加载头像
+            String avatarPath = avatarMap.getOrDefault(msg.sender, defaultAvatar);
+            URL url = getClass().getResource(avatarPath);
+            ImageView avatar;
+            if (url != null) {
+                avatar = new ImageView(new Image(url.toExternalForm(), 32,32,true,true));
+            } else {
+                avatar = new ImageView();
+                avatar.setFitWidth(32);
+                avatar.setFitHeight(32);
+            }
 
             HBox box = new HBox(8);
-            if (msg.sender.equals(me)) {
+            if (msg.sender.equals(myUsername)) {
                 box.setAlignment(Pos.TOP_RIGHT);
                 box.getChildren().setAll(lbl, avatar);
             } else {

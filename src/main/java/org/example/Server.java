@@ -17,6 +17,14 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
 
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * ChatServer listens for client connections, schedules backups, graceful shutdown,
  * and supports Master–Follower replication.
@@ -33,6 +41,9 @@ public class Server {
     private static final ConcurrentHashMap<String, CopyOnWriteArrayList<PrintWriter>> roomClients = new ConcurrentHashMap<>();
     // 主从复制的从节点列表
     private static final List<ReplicaNode> replicas = new CopyOnWriteArrayList<>();
+
+    public static final Map<String, CopyOnWriteArrayList<String>> usersInRoom = new ConcurrentHashMap<>();
+
 
     public static void registerClient(String room, PrintWriter out) {
         roomClients
